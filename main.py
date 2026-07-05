@@ -6,6 +6,7 @@ SCREEN_HEIGHT = 500
 
 def main():
     # SOME CODE FROM DEVELOPER(IGOR)
+    #ok
     pygame.init()
 
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
