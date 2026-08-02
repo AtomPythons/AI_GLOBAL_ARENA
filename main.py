@@ -4,6 +4,10 @@ import time
 SCREEN_WIDTH = 500
 SCREEN_HEIGHT = 500
 
+FPS = 60
+
+BACKGROUND_COLOR = (255, 0, 0)
+
 def main():
     # SOME CODE FROM DEVELOPER(IGOR)
     #ok
@@ -21,8 +25,8 @@ def main():
                 running = False
             
                 
-        screen.fill((255,0,0))
-        clock.tick(60)
+        screen.fill((BACKGROUND_COLOR))
+        clock.tick(FPS)
 
         pygame.display.update()
 
