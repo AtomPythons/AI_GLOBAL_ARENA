@@ -12,6 +12,25 @@ DARK_GREY = (60, 60, 70)
 
 LINE_COLOR = (200, 200, 200)
 
+class Point:
+    def __init__(self, x, y, radius):
+        self.x = x
+        self.y = y
+        self.radius = radius
+
+        self.velocity_y = 1
+
+    def update(self):
+        self.y += self.velocity_y
+        
+
+    def draw(self,screen):
+        pygame.draw.circle(
+            screen,
+            (240, 220, 120),
+            (self.x, self.y), self.radius
+        )
+            
 
 def draw_world(screen):
     screen.fill(BACKGROUND_COLOR)
@@ -28,6 +47,8 @@ def main():
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     clock = pygame.time.Clock()
 
+    p = Point(100, 100, 8)
+
 
     running = True
     while running:
@@ -35,9 +56,10 @@ def main():
         for event in all_events:
             if event.type == pygame.QUIT:
                 running = False
-            
+        p.update()    
                 
         draw_world(screen)
+        p.draw(screen)
         
         clock.tick(FPS)
 
