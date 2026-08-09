@@ -17,11 +17,19 @@ class Point:
         self.x = x
         self.y = y
         self.radius = radius
-
-        self.velocity_y = 1
+        
+        self.vx = 0
+        self.vy = 0
 
     def update(self):
-        self.y += self.velocity_y
+
+        acceleration_x = 0
+        self.vx += acceleration_x
+
+        acceleration_y = 0.098
+        self.vy += acceleration_y
+        self.y += self.vy
+        
         
 
     def draw(self,screen):
