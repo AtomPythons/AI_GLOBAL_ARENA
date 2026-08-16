@@ -4,6 +4,8 @@ import time
 SCREEN_WIDTH = 500
 SCREEN_HEIGHT = 500
 
+FLOOR_Y = 450
+
 FPS = 60
 
 BACKGROUND_COLOR = (25, 30, 30)
@@ -26,9 +28,14 @@ class Point:
         acceleration_x = 0
         self.vx += acceleration_x
 
-        acceleration_y = 0.098
+        acceleration_y = 0.118
         self.vy += acceleration_y
         self.y += self.vy
+
+        if self.y + self.radius >= FLOOR_Y:
+            self.y = FLOOR_Y - self.radius
+            self.vy *= -0.80
+            
         
         
 
@@ -43,9 +50,9 @@ class Point:
 def draw_world(screen):
     screen.fill(BACKGROUND_COLOR)
 
-    pygame.draw.rect(screen, DARK_GREY, pygame.Rect(0, 0, 500, 450))
+    pygame.draw.rect(screen, DARK_GREY, pygame.Rect(0, 0, 500, FLOOR_Y))
 
-    pygame.draw.line(screen, LINE_COLOR, (0, 450), (500, 450), 2)
+    pygame.draw.line(screen, LINE_COLOR, (0, FLOOR_Y), (500, FLOOR_Y), 2)
 
 def main():
     # SOME CODE FROM DEVELOPER(IGOR)
