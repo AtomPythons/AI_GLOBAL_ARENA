@@ -27,6 +27,7 @@ class Point:
 
         acceleration_x = 0
         self.vx += acceleration_x
+        self.x += self.vx
 
         acceleration_y = 0.118
         self.vy += acceleration_y
@@ -45,6 +46,7 @@ class Point:
             (240, 220, 120),
             (self.x, self.y), self.radius
         )
+
             
 
 def draw_world(screen):
@@ -63,6 +65,7 @@ def main():
     clock = pygame.time.Clock()
 
     p = Point(100, 100, 8)
+    p2 = Point(400, 100, 8)
 
 
     running = True
@@ -71,10 +74,31 @@ def main():
         for event in all_events:
             if event.type == pygame.QUIT:
                 running = False
-        p.update()    
+
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_UP] == True:
+            p.vy -= 0.1
+        if keys[pygame.K_DOWN] == True:
+            p.vy += 0.1
+        if keys[pygame.K_LEFT] == True:
+            p.vx -= 0.3
+        if keys[pygame.K_RIGHT] == True:
+            p.vx += 0.3
+        if keys[pygame.K_w] == True:
+            p2.vy -= 0.1
+        if keys[pygame.K_s] == True:
+            p2.vy += 0.1
+        if keys[pygame.K_a] == True:
+            p2.vx -= 0.3
+        if keys[pygame.K_d] == True:
+            p2.vx += 0.3
+        
+        p.update()
+        p2.update()
                 
         draw_world(screen)
         p.draw(screen)
+        p2.draw(screen)
         
         clock.tick(FPS)
 
