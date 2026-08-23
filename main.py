@@ -16,26 +16,39 @@ LINE_COLOR = (200, 200, 200)
 
 class Point:
     def __init__(self, x, y, radius):
-        self.x = x
-        self.y = y
+        #self.x = x
+        #self.y = y
+        self.position = pygame.Vector2(x,y)
         self.radius = radius
         
-        self.vx = 0
-        self.vy = 0
+        #self.vx = 0
+        #self.vy = 0
+        self.velocity = pygame.Vector2(0,0)
+        self.acceleration = pygame.Vector2(0,0)
+
+    def apply_force(self, force):
+        self.acceleration += force
+        
 
     def update(self):
+        self.velocity += self.acceleration
+        self.position += self.velocity
 
-        acceleration_x = 0
-        self.vx += acceleration_x
-        self.x += self.vx
+        self.acceleration *=0
 
-        acceleration_y = 0.118
-        self.vy += acceleration_y
-        self.y += self.vy
+        #self.position += self.velocity
+        #acceleration_x = 0
+        #self.vx += acceleration_x
+        #self.x += self.vx
+        
 
-        if self.y + self.radius >= FLOOR_Y:
-            self.y = FLOOR_Y - self.radius
-            self.vy *= -0.80
+        #acceleration_y = 0.118
+        #self.vy += acceleration_y
+        #self.y += self.vy
+
+        #if self.y + self.radius >= FLOOR_Y:
+            #self.y = FLOOR_Y - self.radius
+            #self.vy *= -0.80
             
         
         
@@ -44,7 +57,7 @@ class Point:
         pygame.draw.circle(
             screen,
             (240, 220, 120),
-            (self.x, self.y), self.radius
+            (self.position.x, self.position.y), self.radius
         )
 
             
@@ -67,13 +80,14 @@ def main():
     p = Point(100, 100, 8)
     p2 = Point(400, 100, 8)
 
-
+    gravity_force = pygame.Vector2(0, 0.1)
     running = True
     while running:
         all_events = pygame.event.get()
         for event in all_events:
             if event.type == pygame.QUIT:
                 running = False
+            
 
         keys = pygame.key.get_pressed()
         if keys[pygame.K_UP] == True:
@@ -92,6 +106,7 @@ def main():
             p2.vx -= 0.3
         if keys[pygame.K_d] == True:
             p2.vx += 0.3
+        p.apply_force(gravity_force)
         
         p.update()
         p2.update()
