@@ -53,13 +53,41 @@ class Point:
         
         
 
-    def draw(self,screen):
+    def draw(self, screen):
         pygame.draw.circle(
             screen,
             (240, 220, 120),
             (self.position.x, self.position.y), self.radius
         )
 
+class Bone:
+    def __init__(self, point_one, point_second, length):
+        self.point_a = point_one
+        self.point_b = point_second
+        self.length = length
+
+    def solve(self):
+        delta = self.point_b.position - self.point_a.position
+        distance = delta.length()
+
+        if distance == 0:
+            return
+
+        difference = (distance - self.length) / distance
+        correction = delta * 0.5 * difference
+
+        self.point_a.position += correction
+        self.point_b.position -= correction
+
+
+    def draw(self, screen):
+        pygame.draw.line(
+            screen,
+            (220, 220, 230),
+            self.point_a.position,
+            self.point_b.position,
+            4,
+    )
             
 
 def draw_world(screen):
@@ -79,6 +107,13 @@ def main():
 
     p = Point(100, 100, 8)
     p2 = Point(400, 100, 8)
+
+    points = [p, p2]
+
+
+    bone1 = Bone(p, p2, 50)
+
+    bones = [bone1]
 
     gravity_force = pygame.Vector2(0, 0.1)
     running = True
@@ -106,14 +141,23 @@ def main():
             p2.vx -= 0.3
         if keys[pygame.K_d] == True:
             p2.vx += 0.3
-        p.apply_force(gravity_force)
-        
-        p.update()
-        p2.update()
+        for current_point in points:
+            current_point.apply_force(gravity_force)
+
+        for current_point in points:
+            current_point.update()
+
+        for _ in range(8):
+            for bone in bones:
+                bone.solve()
                 
         draw_world(screen)
-        p.draw(screen)
-        p2.draw(screen)
+        
+        for current_point in points:
+            current_point.draw(screen)
+
+        
+        bone1.draw(screen)
         
         clock.tick(FPS)
 
