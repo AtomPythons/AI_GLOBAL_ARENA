@@ -49,7 +49,12 @@ class Point:
         #if self.y + self.radius >= FLOOR_Y:
             #self.y = FLOOR_Y - self.radius
             #self.vy *= -0.80
-            
+    
+    def solve_floor_collision(self):
+        if self.position.y + self.radius > FLOOR_Y:
+            self.position.y = FLOOR_Y - self.radius
+            self.velocity.y *= -0.8
+            self.velocity.x *= 0.9
         
         
 
@@ -106,7 +111,7 @@ def main():
     clock = pygame.time.Clock()
 
     p = Point(100, 100, 8)
-    p2 = Point(400, 100, 8)
+    p2 = Point(400, 120, 8)
 
     points = [p, p2]
 
@@ -150,6 +155,9 @@ def main():
         for _ in range(8):
             for bone in bones:
                 bone.solve()
+
+        for point in points:
+            point.solve_floor_collision()
                 
         draw_world(screen)
         
