@@ -110,15 +110,58 @@ def main():
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
     clock = pygame.time.Clock()
 
-    p = Point(100, 100, 8)
-    p2 = Point(400, 120, 8)
+    head = Point(251, 100, 5)
+    chest = Point(250, 150, 7)
+    pelvis = Point(250, 210, 5)
 
-    points = [p, p2]
+    left_elbow = Point(215, 165, 5)
+    right_elbow = Point(285, 165, 5)
+    left_hand = Point(190, 205, 5)
+    right_hand = Point(310, 205, 5)
+
+    left_knee = Point(225, 280, 5)
+    left_foot = Point(210, 350, 5)
+
+    right_knee = Point(325, 280, 5)
+    right_foot = Point(310, 350, 5)
+
+    points = [head,
+              chest,
+              pelvis,
+              
+              left_elbow,
+              left_hand,
+
+              right_elbow,
+              right_hand,
+
+              left_knee,
+              left_foot,
+
+              right_knee,
+              right_foot
+    ]
 
 
-    bone1 = Bone(p, p2, 50)
+    
 
-    bones = [bone1]
+    bones = [
+        Bone(head, chest, 50),
+        Bone(chest, pelvis, 60),
+        
+        Bone(chest, left_elbow, 45),
+        Bone(left_elbow, left_hand, 45),
+        
+        Bone(chest, right_elbow, 45),
+        Bone(right_elbow, right_hand, 45),
+
+        Bone(pelvis, left_knee, 65),
+        Bone(left_knee, left_foot, 70),
+
+        Bone(pelvis, right_knee, 65),
+        Bone(right_knee, right_foot, 70)
+
+    ]
 
     gravity_force = pygame.Vector2(0, 0.1)
     running = True
@@ -131,13 +174,21 @@ def main():
 
         keys = pygame.key.get_pressed()
         if keys[pygame.K_UP] == True:
-            p.vy -= 0.1
+            for point in points:
+                some_force = pygame.Vector2(0, -0.1)
+                point.apply_force(some_force)
         if keys[pygame.K_DOWN] == True:
-            p.vy += 0.1
+            for point in points:
+                some_force = pygame.Vector2(0, 0.1)
+                point.apply_force(some_force)
         if keys[pygame.K_LEFT] == True:
-            p.vx -= 0.3
+            for point in points:
+                some_force = pygame.Vector2(-0.1, 0)
+                point.apply_force(some_force)
         if keys[pygame.K_RIGHT] == True:
-            p.vx += 0.3
+            for point in points:
+                some_force = pygame.Vector2(0.1, 0)
+                point.apply_force(some_force)
         if keys[pygame.K_w] == True:
             p2.vy -= 0.1
         if keys[pygame.K_s] == True:
@@ -165,7 +216,9 @@ def main():
             current_point.draw(screen)
 
         
-        bone1.draw(screen)
+        #bone1.draw(screen)
+        for bone in bones:
+            bone.draw(screen)
         
         clock.tick(FPS)
 
