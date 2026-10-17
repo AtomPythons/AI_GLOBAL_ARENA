@@ -1,4 +1,4 @@
-"""Measure whether direct body forces can keep the humanoid upright."""
+"""Compare standing controllers and inspect their poses."""
 
 import argparse
 from dataclasses import dataclass
@@ -9,6 +9,8 @@ from statistics import mean, median
 import pygame
 
 import ai_arena_physics_base as physics
+from spring_control import (ALL_POSE_SPRINGS, ALL_SPRINGS,
+                            apply_pose_action, apply_spring_action)
 from train_q_learning import (ACTION_FRAMES, Arena, QAgent, STATUS_HEIGHT,
                               draw_arena, encode_state)
 
@@ -22,32 +24,15 @@ class BalanceController:
         self.damping = damping
 
     def apply(self, points):
-        body = {point.name: point for point in points}
-        head = body["Head"]
-        chest = body["Chest"]
-        pelvis = body["Pelvis"]
-        left_foot = body["Left Foot"]
-        right_foot = body["Right Foot"]
-        feet_middle = (left_foot.position.x + right_foot.position.x) / 2
+        apply_spring_action(points, ALL_SPRINGS,
+                            self.lift, self.align, self.damping)
 
-        physics.apply_target_spring(
-            pelvis, (feet_middle, physics.FLOOR_Y - 140),
-            self.lift, self.damping)
-        physics.apply_target_spring(
-            chest, (pelvis.position.x, pelvis.position.y - 60),
-            self.align, self.damping)
-        physics.apply_target_spring(
-            head, (chest.position.x, chest.position.y - 50),
-            self.align, self.damping)
-        for side, offset in (("Left", -25), ("Right", 25)):
-            knee = body[side + " Knee"]
-            foot = body[side + " Foot"]
-            physics.apply_target_spring(
-                knee, (pelvis.position.x + offset, pelvis.position.y + 65),
-                self.align, self.damping)
-            physics.apply_target_spring(
-                foot, (pelvis.position.x + offset, physics.FLOOR_Y - 5),
-                self.align, self.damping)
+
+class PoseController:
+    """A mirrored standing pose with active arms for inspection."""
+
+    def apply(self, points):
+        apply_pose_action(points, ALL_POSE_SPRINGS)
 
 
 class DiscreteBalanceController:
@@ -117,13 +102,13 @@ def summarize(name, results):
           f"score {mean(r.mean_standing_score for r in results):.2f}/5")
 
 
-def evaluate(episodes, controller, model=None):
+def evaluate(episodes, controller, model=None, controller_name="Balance controller"):
     seeds = range(1000, 1000 + episodes)
     summarize("No control", [run_episode(seed) for seed in seeds])
     discrete = DiscreteBalanceController()
     summarize("Discrete feedback",
               [run_episode(seed, model=discrete) for seed in seeds])
-    summarize("Balance controller",
+    summarize(controller_name,
               [run_episode(seed, controller=controller) for seed in seeds])
     if model is not None:
         summarize("Saved Q-model",
@@ -199,12 +184,15 @@ def main():
     parser.add_argument("--model", type=Path, help="Q-model to compare")
     parser.add_argument("--show", action="store_true",
                         help="Open an interactive demonstration")
+    parser.add_argument("--pose", action="store_true",
+                        help="Use the arm-and-leg pose controller")
     args = parser.parse_args()
     if args.episodes < 1:
         parser.error("Episode count must be positive")
-    controller = BalanceController()
+    controller = PoseController() if args.pose else BalanceController()
     model = QAgent.load(args.model) if args.model else None
-    evaluate(args.episodes, controller, model)
+    name = "Pose controller" if args.pose else "Balance controller"
+    evaluate(args.episodes, controller, model, name)
     if args.show:
         show(controller)
 

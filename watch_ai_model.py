@@ -10,7 +10,10 @@ from train_q_learning import QAgent, STATUS_HEIGHT, run_demo
 
 
 def latest_model():
-    models = sorted(Path(__file__).parent.glob("ai_model_*.json"))
+    model_dir = Path(__file__).parent
+    models = sorted(model_dir.glob("ai_model_*_best_model_of_session.json"))
+    if not models:
+        models = sorted(model_dir.glob("ai_model_*.json"))
     if not models:
         raise SystemExit("No model found. Train one first or pass --model PATH.")
     return models[-1]

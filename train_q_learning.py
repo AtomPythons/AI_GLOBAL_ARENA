@@ -1,4 +1,4 @@
-"""Train a tabular Q-learning controller for the Pygame humanoid."""
+"""Train a Q-learning controller for the Pygame humanoid."""
 
 import argparse
 from datetime import datetime
@@ -15,6 +15,9 @@ import time
 import pygame
 
 import ai_arena_physics_base as physics
+from spring_control import (POSE_ACTIONS, SPRING_ACTIONS, PoseAction,
+                            SpringAction, apply_pose_action,
+                            apply_spring_action)
 
 
 FRAME_DT = 1 / physics.FPS
@@ -26,6 +29,8 @@ JOINT_MODEL_VERSION = 2
 FACTORED_MODEL_VERSION = 3
 MOTION_MODEL_VERSION = 4
 SURVIVAL_MODEL_VERSION = 5
+SPRING_MODEL_VERSION = 6
+POSE_MODEL_VERSION = 7
 PRIMITIVE_ACTIONS = tuple(physics.get_action_space()[1:])
 MOTION_ACTIONS = PRIMITIVE_ACTIONS + (
     "head_up", "left_knee_up", "right_knee_up")
@@ -176,7 +181,11 @@ class Arena:
                 point.apply_force(pygame.Vector2(0, physics.GRAVITY_Y))
             if self.posture_assist:
                 physics.apply_posture_assist(self.points)
-            if isinstance(action, int):
+            if isinstance(action, PoseAction):
+                apply_pose_action(self.points, action.mask)
+            elif isinstance(action, SpringAction):
+                apply_spring_action(self.points, action.mask)
+            elif isinstance(action, int):
                 physics.apply_discrete_action(self.points, action)
             else:
                 for primitive in action:
@@ -284,6 +293,10 @@ class QAgent:
     def load(cls, path):
         with open(path, encoding="utf-8") as stream:
             payload = json.load(stream)
+        if payload.get("version") == POSE_MODEL_VERSION:
+            return PoseQAgent.from_payload(payload)
+        if payload.get("version") == SPRING_MODEL_VERSION:
+            return SpringQAgent.from_payload(payload)
         if payload.get("version") == SURVIVAL_MODEL_VERSION:
             return SurvivalQAgent.from_payload(payload)
         if payload.get("version") == FACTORED_MODEL_VERSION:
@@ -403,6 +416,11 @@ class JointQAgent(QAgent):
     @classmethod
     def from_legacy(cls, legacy):
         agent = cls(legacy.alpha, legacy.gamma)
+        agent.epsilon = legacy.epsilon
+        agent.episodes_trained = legacy.episodes_trained
+        agent.best_mean_reward = legacy.best_mean_reward
+        agent.best_mean_alive = legacy.best_mean_alive
+        agent.checkpoint_mean_reward = legacy.checkpoint_mean_reward
         agent.values = {
             state: {0: values[0], **{
                 1 << (index - 1): value
@@ -491,10 +509,11 @@ class MotionQAgent(QAgent):
     model_version = MOTION_MODEL_VERSION
     algorithm = "motion_feature_q_learning"
     reward_mode = "posture"
+    action_names = MOTION_ACTIONS
 
     def __init__(self, alpha=0.035, gamma=0.97, epsilon=1.0):
         super().__init__(alpha, gamma, epsilon)
-        self.actions = MOTION_ACTIONS
+        self.actions = self.action_names
         self.resolve_opposites = True
 
     @property
@@ -587,7 +606,7 @@ class MotionQAgent(QAgent):
             raise ValueError("Unsupported motion model algorithm")
         if payload.get("reward_mode", "posture") != cls.reward_mode:
             raise ValueError("Model reward mode does not match the algorithm")
-        if tuple(payload.get("actions", ())) != MOTION_ACTIONS:
+        if tuple(payload.get("actions", ())) != cls.action_names:
             raise ValueError("Model actions do not match the physics module")
         if payload.get("action_frames") != ACTION_FRAMES:
             raise ValueError("Model action interval does not match the viewer")
@@ -601,7 +620,7 @@ class MotionQAgent(QAgent):
             tuple(map(int, key.split(","))): values
             for key, values in payload["q_table"].items()
         }
-        if any(len(row) != len(MOTION_ACTIONS)
+        if any(len(row) != len(cls.action_names)
                or any(len(pair) != 2 for pair in row)
                for row in agent.values.values()):
             raise ValueError("Invalid motion Q-table shape")
@@ -622,11 +641,60 @@ class SurvivalQAgent(MotionQAgent):
         return total
 
 
+class SpringQAgent(SurvivalQAgent):
+    """Learn which pose-dependent force groups to enable together."""
+
+    model_version = SPRING_MODEL_VERSION
+    algorithm = "spring_feature_q_learning"
+    action_names = SPRING_ACTIONS
+
+    def __init__(self, alpha=0.035, gamma=0.97, epsilon=1.0):
+        super().__init__(alpha, gamma, epsilon)
+        self.resolve_opposites = False
+
+    def choose_action(self, state, rng):
+        if rng.random() < self.epsilon:
+            return rng.randrange(self.action_count)
+        return self.greedy_action(state)
+
+    def decode_action(self, action):
+        if not 0 <= action < self.action_count:
+            raise ValueError("Invalid spring action mask")
+        return SpringAction(action)
+
+    def action_label(self, action):
+        labels = ("P", "C", "H", "LL", "RL")
+        active = [label for index, label in enumerate(labels)
+                  if action & (1 << index)]
+        return " ".join(active) if active else "none"
+
+
+class PoseQAgent(SpringQAgent):
+    """Select mirrored leg and arm feedback without altering old models."""
+
+    model_version = POSE_MODEL_VERSION
+    algorithm = "pose_feature_q_learning"
+    action_names = POSE_ACTIONS
+
+    def decode_action(self, action):
+        if not 0 <= action < self.action_count:
+            raise ValueError("Invalid pose action mask")
+        return PoseAction(action)
+
+    def action_label(self, action):
+        labels = ("P", "C", "H", "LL", "RL", "LA", "RA")
+        active = [label for index, label in enumerate(labels)
+                  if action & (1 << index)]
+        return " ".join(active) if active else "none"
+
+
 def run_episode(agent, rng, training, seed):
     arena = Arena()
     arena.reset(seed)
     total_reward = 0.0
     total_posture_reward = 0.0
+    standing_score_total = 0
+    frame_count = 0
     while not arena.episode.is_episode_over:
         state = agent.encode_state(arena.points, arena.metrics)
         action = agent.choose_action(state, rng) if training else agent.greedy_action(state)
@@ -637,6 +705,8 @@ def run_episode(agent, rng, training, seed):
             arena.step(agent.decode_action(action))
             reward += agent.frame_reward(arena)
             posture_reward += arena.reward
+            standing_score_total += arena.metrics["standing_score"]
+            frame_count += 1
             frames += 1
             if arena.episode.is_episode_over:
                 break
@@ -650,6 +720,7 @@ def run_episode(agent, rng, training, seed):
     if training:
         agent.finish_episode()
     arena.total_posture_reward = total_posture_reward
+    arena.mean_standing_score = standing_score_total / frame_count
     return total_reward, arena.episode.time_alive, arena
 
 
@@ -660,6 +731,8 @@ def evaluate(agent):
     return (sum(result[0] for result in results) / len(results),
             sum(result[1] for result in results) / len(results),
             sum(result[2].total_posture_reward for result in results)
+            / len(results),
+            sum(result[2].mean_standing_score for result in results)
             / len(results))
 
 
@@ -681,7 +754,8 @@ def draw_arena(screen, font, small_font, arena, selected, show_labels, lines):
     draw_overlay(screen, font, lines)
 
 
-def run_demo(screen, font, small_font, agent, model_name, allow_continue=False):
+def run_demo(screen, font, small_font, agent, model_name, allow_continue=False,
+             total_episodes=None, session_start=0):
     """Play a greedy policy with the original demo's inspection controls."""
     clock = pygame.time.Clock()
     arena = Arena()
@@ -739,8 +813,12 @@ def run_demo(screen, font, small_font, agent, model_name, allow_continue=False):
 
         best_alive = (f"{agent.best_mean_alive:.2f}s"
                       if math.isfinite(agent.best_mean_alive) else "n/a")
-        lines = [f"Model: {model_name}",
-                 f"Trained: {agent.episodes_trained}  "
+        trained = agent.episodes_trained if total_episodes is None else total_episodes
+        progress = (f"Trained: {trained}"
+                    if total_episodes is None else
+                    f"Total episodes: {trained}  "
+                    f"This session: {trained - session_start}")
+        lines = [f"Model: {model_name}", progress,
                  f"Best standing: {best_alive}  "
                  f"Training return: {agent.checkpoint_mean_reward:.1f}",
                  f"Control: {'model' if model_enabled else 'manual'}  "
@@ -752,7 +830,37 @@ def run_demo(screen, font, small_font, agent, model_name, allow_continue=False):
         draw_arena(screen, font, small_font, arena, selected, show_labels, lines)
 
 
-def train_batch(agent, count, screen, font, small_font, model_path, rng):
+class TrainingSession:
+    def __init__(self, started_at, best_path, last_path):
+        self.started_at = started_at
+        self.best_path = best_path
+        self.last_path = last_path
+        self.best_mean_alive = float("-inf")
+        self.best_mean_reward = float("-inf")
+
+    def episodes_completed(self, agent):
+        return agent.episodes_trained - self.started_at
+
+    def save_best_if_improved(self, agent, mean_alive, mean_reward):
+        improved = (mean_alive > self.best_mean_alive + 1e-9
+                    or (abs(mean_alive - self.best_mean_alive) <= 1e-9
+                        and mean_reward > self.best_mean_reward))
+        if not improved:
+            return False
+        self.best_mean_alive = mean_alive
+        self.best_mean_reward = mean_reward
+        agent.save(self.best_path)
+        return True
+
+    def save_last(self, agent):
+        if self.episodes_completed(agent) == 0:
+            return
+        agent.save(self.last_path)
+        if not self.best_path.exists():
+            agent.save(self.best_path)
+
+
+def train_batch(agent, count, screen, font, small_font, session, rng):
     started = time.monotonic()
     last_draw = 0.0
     mean_reward = 0.0
@@ -769,9 +877,10 @@ def train_batch(agent, count, screen, font, small_font, model_path, rng):
         mean_reward += (reward - mean_reward) / completed
         mean_alive += (alive - mean_alive) / completed
         now = time.monotonic()
-        if ((agent.episodes_trained % EVALUATION_INTERVAL == 0)
+        if (((index + 1) % EVALUATION_INTERVAL == 0)
                 or index == count - 1):
-            evaluation_reward, evaluation_alive, evaluation_posture = evaluate(agent)
+            (evaluation_reward, evaluation_alive, evaluation_posture,
+             evaluation_standing_score) = evaluate(agent)
             agent.best_mean_reward = max(agent.best_mean_reward,
                                          evaluation_reward)
             if (evaluation_alive > agent.best_mean_alive + 1e-9
@@ -779,19 +888,28 @@ def train_batch(agent, count, screen, font, small_font, model_path, rng):
                         and evaluation_reward > agent.checkpoint_mean_reward)):
                 agent.best_mean_alive = evaluation_alive
                 agent.checkpoint_mean_reward = evaluation_reward
-                agent.save(model_path)
-                print(f"Saved best model: {model_path}", flush=True)
+            if session.save_best_if_improved(
+                    agent, evaluation_alive, evaluation_reward):
+                print(f"Saved best model of session: {session.best_path}",
+                      flush=True)
             print(f"Evaluated after {agent.episodes_trained} episodes: "
-                  f"training return {evaluation_reward:.1f}, "
+                  f"this session {session.episodes_completed(agent)}, "
+                  f"mean reward {evaluation_reward:.1f}, "
+                  f"last episode reward {reward:.1f}, "
                   f"standing {evaluation_alive:.3f}s, "
                   f"best standing {agent.best_mean_alive:.3f}s, "
+                  f"mean standing score {evaluation_standing_score:.2f}/5, "
                   f"posture return {evaluation_posture:.1f}, "
                   f"peak return {agent.best_mean_reward:.1f}", flush=True)
         if screen is None:
             if (index + 1) % min(1000, count) == 0:
                 print(f"Episodes: {agent.episodes_trained}  "
+                      f"This session: {session.episodes_completed(agent)}  "
                       f"Batch: {index + 1}/{count}  "
-                      f"Mean training return: {mean_reward:.1f}", flush=True)
+                      f"Mean training return: {mean_reward:.1f}  "
+                      f"Last episode reward: {reward:.1f}  "
+                      f"Standing score: {arena.mean_standing_score:.2f}/5 "
+                      f"(episode mean)", flush=True)
         elif now - last_draw >= 0.15 or index == count - 1:
             rate = completed / max(now - started, 0.001)
             remaining = (count - completed) / rate
@@ -803,11 +921,15 @@ def train_batch(agent, count, screen, font, small_font, model_path, rng):
                            else "pending")
             lines = [f"TRAINING  {index + 1}/{count} in this batch",
                      f"Total episodes: {agent.episodes_trained}  "
+                     f"Session: {session.episodes_completed(agent)}  "
                      f"ETA: {remaining:.0f}s",
                      f"Best standing: {best_alive}  "
                      f"Batch: {mean_alive:.2f}s",
                      f"Peak return: {best_reward}  "
                      f"Batch: {mean_reward:.1f}",
+                     f"Last episode reward: {reward:.1f}  "
+                     f"Standing score: {arena.mean_standing_score:.2f}/5 "
+                     f"(episode mean)",
                      f"Exploration: {agent.epsilon:.2f}  "
                      f"Actions: {agent.action_count}"]
             draw_arena(screen, font, small_font, arena, arena.points[0],
@@ -819,6 +941,8 @@ def train_batch(agent, count, screen, font, small_font, model_path, rng):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", type=Path, help="Continue from a saved model")
+    parser.add_argument("--agent", choices=("spring", "direct", "pose"),
+                        help="Controller for a new run (default: spring)")
     parser.add_argument("--batch-size", type=int, default=10_000)
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--batches", type=int, default=1,
@@ -826,31 +950,30 @@ def main():
     args = parser.parse_args()
     if args.batch_size < 1 or args.batches < 1:
         parser.error("Batch size and batch count must be positive")
+    if args.model and args.agent:
+        parser.error("--agent applies only to a new run without --model")
 
     rng = random.Random()
     saved = QAgent.load(args.model) if args.model else None
-    model_path = Path(__file__).with_name(
-        f"ai_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    model_prefix = f"ai_model_{timestamp}"
+    model_dir = Path(__file__).parent
     if saved is None:
-        agent = SurvivalQAgent()
-    elif isinstance(saved, SurvivalQAgent):
-        agent = saved
-        model_path = args.model
-    elif isinstance(saved, MotionQAgent):
-        agent = saved
-        model_path = args.model
-    elif isinstance(saved, FactoredQAgent):
-        agent = saved
-        model_path = args.model
-    elif isinstance(saved, JointQAgent):
-        agent = saved
-        print(f"Continuing the earlier joint-table algorithm from {args.model}; "
-              f"checkpoint will be saved to {model_path}. "
-              "Omit --model to train the survival-reward agent.", flush=True)
-    else:
+        agent_type = {"spring": SpringQAgent, "direct": SurvivalQAgent,
+                      "pose": PoseQAgent}[args.agent or "spring"]
+        agent = agent_type()
+    elif type(saved) is QAgent:
         agent = JointQAgent.from_legacy(saved)
-        print(f"Imported single-action values from {args.model}; "
-              f"joint model will be saved to {model_path}", flush=True)
+        print(f"Imported single-action values from {args.model}.", flush=True)
+    else:
+        agent = saved
+    session = TrainingSession(
+        agent.episodes_trained,
+        model_dir / f"{model_prefix}_best_model_of_session.json",
+        model_dir / f"{model_prefix}_last_model_of_session.json")
+    if args.model:
+        print(f"Continuing {args.model} from {session.started_at} episodes; "
+              f"new checkpoints will be saved separately.", flush=True)
     print(f"Available action combinations: {agent.action_count}", flush=True)
     screen = font = small_font = None
     if not args.headless:
@@ -864,16 +987,27 @@ def main():
         batch_numbers = range(args.batches) if args.headless else itertools.count()
         for _ in batch_numbers:
             if not train_batch(agent, args.batch_size, screen, font,
-                               small_font, model_path, rng):
+                               small_font, session, rng):
                 break
             if screen is not None:
-                best = QAgent.load(model_path)
+                best = QAgent.load(session.best_path)
                 if run_demo(screen, font, small_font, best,
-                            model_path.name, allow_continue=True) == "quit":
+                            session.best_path.name, allow_continue=True,
+                            total_episodes=agent.episodes_trained,
+                            session_start=session.started_at) == "quit":
                     break
+    except KeyboardInterrupt:
+        print("Stopping training...", flush=True)
     finally:
-        if not args.headless:
-            pygame.quit()
+        try:
+            session.save_last(agent)
+            if session.last_path.exists():
+                print(f"Saved last model of session: {session.last_path}",
+                      flush=True)
+                print(f"Best model of session: {session.best_path}", flush=True)
+        finally:
+            if not args.headless:
+                pygame.quit()
 
 
 if __name__ == "__main__":
