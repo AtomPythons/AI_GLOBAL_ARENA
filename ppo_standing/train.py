@@ -332,7 +332,8 @@ class StandingProgress(BaseCallback):
         print(f"step={self.num_timesteps} "
               f"median={metrics['median_standing_seconds']:.3f}s "
               f"success={metrics['success_rate']:.0%} "
-              f"valid={metrics['mean_valid_standing_fraction']:.2f}",
+              f"valid={metrics['mean_valid_standing_fraction']:.2f} "
+              f"reward={metrics['mean_reward']:.3f}",
               flush=True)
 
     def _on_training_end(self):
