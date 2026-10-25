@@ -3,17 +3,17 @@
 A Pygame humanoid physics sandbox with a Q-learning experiment.
 Install `pygame` before running the scripts.
 
-## PPO: обучение стойке
+## PPO standing training
 
-Для урока установите зависимости в активированном виртуальном окружении:
+Install the dependencies in your activated virtual environment:
 
 ```bash
 python -m pip install -r requirements-ppo.txt
 ```
 
-Запуск ниже обучает агента стоять в течение 10 секунд без пружинного
-контроллера. В конце в терминале будет указан каталог нового прогона вида
-`ppo_runs/seed_35_ГГГГММДД_ЧЧММСС`.
+The command below trains an agent to stand for 10 seconds without a spring
+controller. The terminal prints a new run directory such as
+`ppo_runs/seed_35_YYYYMMDD_HHMMSS`.
 
 ```bash
 python -m ppo_standing.train \
@@ -27,30 +27,29 @@ python -m ppo_standing.train \
   --eval-seed-start 90000
 ```
 
-`--seed 35` задаёт начальное значение генератора случайных чисел. При одном
-и том же коде и настройках оно делает начальные позы и обучение более
-повторяемыми. Можно заменить `35` на другое целое число и получить отдельный
-эксперимент.
+`--seed 35` sets the initial random-number-generator state. With the same
+code and settings, it makes the initial poses and training process more
+repeatable. Replace `35` with another integer to create a separate experiment.
 
-`--timesteps 204800` — число шагов взаимодействия агента со средой, а не
-время в секундах. Чем оно больше, тем дольше идёт обучение; с четырьмя
-параллельными средами счётчик растёт сразу на четыре за один общий шаг.
+`--timesteps 204800` is the number of agent-environment interactions, not a
+duration in seconds. Larger values take longer to train. With four parallel
+environments, the counter advances by four on each shared step.
 
-После завершения подставьте напечатанный каталог прогона в команды ниже.
-`best.zip` — лучшая модель по независимым проверочным позам, `last.zip` —
-состояние на самом последнем шаге.
+After training, substitute the printed run directory in the commands below.
+`best.zip` is the best model on independent evaluation poses; `last.zip` is
+the state at the final training step.
 
 ```bash
 python -m ppo_standing.train \
-  --evaluate ppo_runs/seed_35_ГГГГММДД_ЧЧММСС/best.zip \
+  --evaluate ppo_runs/seed_35_YYYYMMDD_HHMMSS/best.zip \
   --eval-episode-seconds 10 --eval-seed-start 100000 --eval-episodes 100
 
 python -m ppo_standing.watch \
-  --model ppo_runs/seed_35_ГГГГММДД_ЧЧММСС/best.zip --seed 100000
+  --model ppo_runs/seed_35_YYYYMMDD_HHMMSS/best.zip --seed 100000
 ```
 
-В окне просмотра `R` повторяет ту же стартовую позу, `N` переключает на
-следующую, `M` сравнивает модель с нулевыми действиями, `Esc` закрывает окно.
+In the viewer, `R` repeats the same initial pose, `N` switches to the next
+one, `M` compares the model with zero actions, and `Esc` closes the window.
 
 ## Training
 
