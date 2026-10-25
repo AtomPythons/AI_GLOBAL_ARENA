@@ -16,15 +16,21 @@ python -m ppo_standing.train \
   --eval-seed-start 90000 --watch-eval
 ```
 
-`--seed 35` selects the random starting point for the experiment. Use another
-integer to run a separate experiment. `--timesteps 204800` is the number of
-agent-environment interactions used for training.
+Training flags:
+
+- `--seed 35` selects the random starting point for the experiment. Use another
+  integer to run a separate experiment.
+- `--timesteps 204800` is the total number of agent-environment interactions
+  used for training. Larger values take longer.
+- `--eval-every 8192` evaluates the current model after every 8,192
+  interactions and saves a checkpoint for that evaluation.
+- `--watch-eval` opens a viewer after each evaluation. Press `Esc` in the
+  viewer to resume training.
 
 The terminal prints the directory for the new run, for example
 `ppo_runs/seed_35_YYYYMMDD_HHMMSS`. It contains `best.zip` (the best evaluated
 model), `last.zip` (the final model), and a checkpoint after every evaluation
-in `checkpoints/`. With `--watch-eval`, a viewer opens after each evaluation;
-press `Esc` to resume training.
+in `checkpoints/`.
 
 ## View a trained model
 
