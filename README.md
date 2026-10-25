@@ -37,7 +37,10 @@ environments, the counter advances by four on each shared step.
 
 After training, substitute the printed run directory in the commands below.
 `best.zip` is the best model on independent evaluation poses; `last.zip` is
-the state at the final training step.
+the state at the final training step. Every evaluation also saves the current
+model as `checkpoints/step_XXXXXXXXX.zip` inside the run directory. Add
+`--watch-eval` to the training command to open a viewer after every evaluation;
+press `Esc` in that window to continue training.
 
 ```bash
 python -m ppo_standing.train \

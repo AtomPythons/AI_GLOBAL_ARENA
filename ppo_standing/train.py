@@ -276,12 +276,17 @@ def write_progress_svg(run_dir):
 
 
 class StandingProgress(BaseCallback):
-    def __init__(self, run_dir, manifest, eval_every, save_every):
+    def __init__(self, run_dir, manifest, eval_every, save_every,
+                 watch_eval=False, watch_seed=None):
         super().__init__()
         self.run_dir = run_dir
         self.manifest = manifest
         self.eval_every = eval_every
         self.save_every = save_every
+        self.watch_eval = watch_eval
+        self.watch_seed = watch_seed
+        self.checkpoint_dir = self.run_dir / "checkpoints"
+        self.checkpoint_dir.mkdir(exist_ok=True)
         self.next_eval = (manifest.get("last_evaluation_step", 0)
                           + eval_every)
         self.next_save = (self.model_steps(manifest) // save_every + 1) * save_every
@@ -323,6 +328,9 @@ class StandingProgress(BaseCallback):
         metrics["phase"] = phase
         append_jsonl(self.run_dir / "evaluations.jsonl", metrics)
         write_progress_svg(self.run_dir)
+        checkpoint_path = self.checkpoint_dir / (
+            f"step_{self.num_timesteps:09d}.zip")
+        self.model.save(checkpoint_path)
         previous = self.manifest.get("best_evaluation")
         if previous is None or ranking(metrics) > ranking(previous):
             self.model.save(self.run_dir / "best.zip")
@@ -335,6 +343,17 @@ class StandingProgress(BaseCallback):
               f"valid={metrics['mean_valid_standing_fraction']:.2f} "
               f"reward={metrics['mean_reward']:.3f}",
               flush=True)
+        if self.watch_eval:
+            from .watch import watch
+            config = self.manifest["config"]
+            preview_env = environment_class(config)(
+                episode_seconds=config["episode_seconds"],
+                **environment_options(config))
+            print("Opening evaluation viewer; close it with Esc to resume training.",
+                  flush=True)
+            watch(self.model, preview_env,
+                  f"{self.run_dir.name}/step_{self.num_timesteps}",
+                  self.watch_seed)
 
     def _on_training_end(self):
         # _on_step evaluates before PPO trains on the most recent rollout.
@@ -423,14 +442,19 @@ def parse_args():
     parser.add_argument("--save-every", type=int, default=2_048)
     parser.add_argument("--eval-episodes", type=int, default=20)
     parser.add_argument("--eval-seed-start", type=int, default=10_000)
+    parser.add_argument("--watch-eval", action="store_true",
+                        help="Open a viewer after every evaluation; Esc resumes training")
+    parser.add_argument("--watch-seed", type=int,
+                        help="Pose seed for --watch-eval (default: --eval-seed-start)")
     parser.add_argument("--torch-threads", type=int, default=1)
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    if args.torch_threads < 1 or args.eval_episodes < 1:
-        raise ValueError("Torch threads and evaluation episodes must be positive")
+    if (args.torch_threads < 1 or args.eval_episodes < 1
+            or args.watch_seed is not None and args.watch_seed < 0):
+        raise ValueError("Torch threads, episode counts, and watch seed must be positive")
     torch.set_num_threads(args.torch_threads)
     if args.evaluate:
         path = args.evaluate.resolve()
@@ -560,8 +584,11 @@ def main():
             print(f"Training {run_dir}", flush=True)
         manifest["status"] = "running"
         write_json(run_dir / "manifest.json", manifest)
-        callback = StandingProgress(run_dir, manifest, config["eval_every"],
-                                    config["save_every"])
+        callback = StandingProgress(
+            run_dir, manifest, config["eval_every"], config["save_every"],
+            watch_eval=args.watch_eval,
+            watch_seed=(args.watch_seed if args.watch_seed is not None
+                        else config["eval_seed_start"]))
         try:
             model.learn(total_timesteps=args.timesteps, callback=callback,
                         reset_num_timesteps=not bool(args.resume),
