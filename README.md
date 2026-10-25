@@ -3,6 +3,55 @@
 A Pygame humanoid physics sandbox with a Q-learning experiment.
 Install `pygame` before running the scripts.
 
+## PPO: обучение стойке
+
+Для урока установите зависимости в активированном виртуальном окружении:
+
+```bash
+python -m pip install -r requirements-ppo.txt
+```
+
+Запуск ниже обучает агента стоять в течение 10 секунд без пружинного
+контроллера. В конце в терминале будет указан каталог нового прогона вида
+`ppo_runs/seed_35_ГГГГММДД_ЧЧММСС`.
+
+```bash
+python train_ppo_standing.py \
+  --seed 35 --timesteps 204800 --num-envs 4 \
+  --episode-seconds 10 --env-version 5 \
+  --static-mu 0.2 --kinetic-mu 0.1 \
+  --policy bounded --n-steps 512 --batch-size 256 \
+  --n-epochs 8 --gamma 0.997 --gae-lambda 0.99 \
+  --learning-rate 0.0003 --ent-coef 0.01 \
+  --eval-every 8192 --save-every 8192 \
+  --eval-seed-start 90000
+```
+
+`--seed 35` задаёт начальное значение генератора случайных чисел. При одном
+и том же коде и настройках оно делает начальные позы и обучение более
+повторяемыми. Можно заменить `35` на другое целое число и получить отдельный
+эксперимент.
+
+`--timesteps 204800` — число шагов взаимодействия агента со средой, а не
+время в секундах. Чем оно больше, тем дольше идёт обучение; с четырьмя
+параллельными средами счётчик растёт сразу на четыре за один общий шаг.
+
+После завершения подставьте напечатанный каталог прогона в команды ниже.
+`best.zip` — лучшая модель по независимым проверочным позам, `last.zip` —
+состояние на самом последнем шаге.
+
+```bash
+python train_ppo_standing.py \
+  --evaluate ppo_runs/seed_35_ГГГГММДД_ЧЧММСС/best.zip \
+  --eval-episode-seconds 10 --eval-seed-start 100000 --eval-episodes 100
+
+python watch_ppo_model.py \
+  --model ppo_runs/seed_35_ГГГГММДД_ЧЧММСС/best.zip --seed 100000
+```
+
+В окне просмотра `R` повторяет ту же стартовую позу, `N` переключает на
+следующую, `M` сравнивает модель с нулевыми действиями, `Esc` закрывает окно.
+
 ## Training
 
 ```bash

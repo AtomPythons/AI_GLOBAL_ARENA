@@ -1,5 +1,8 @@
 """A small Pygame ragdoll sandbox and a starting point for an RL environment."""
 
+from dataclasses import dataclass
+import math
+
 import pygame
 
 
@@ -88,6 +91,238 @@ class Bone:
     def draw(self, screen):
         pygame.draw.line(screen, BONE_COLOR, self.point_a.position,
                          self.point_b.position, 4)
+
+
+JOINT_ANGLE_LIMITS = (
+    # (name, proximal, joint, distal, minimum, maximum), angles in degrees.
+    ("neck", "Head", "Chest", "Pelvis", 130, 230),
+    ("left_hip", "Chest", "Pelvis", "Left Knee", -175, -50),
+    ("right_hip", "Chest", "Pelvis", "Right Knee", 50, 175),
+    ("left_knee", "Pelvis", "Left Knee", "Left Foot", 35, 175),
+    ("right_knee", "Pelvis", "Right Knee", "Right Foot", -175, -35),
+    ("left_shoulder", "Pelvis", "Chest", "Left Elbow", 10, 170),
+    ("right_shoulder", "Pelvis", "Chest", "Right Elbow", -170, -10),
+    ("left_elbow", "Chest", "Left Elbow", "Left Hand", 20, 175),
+    ("right_elbow", "Chest", "Right Elbow", "Right Hand", -175, -20),
+)
+BODY_COLLISION_GAP = 8
+
+
+def _bounded_angle(angle, minimum, maximum):
+    """Choose the equivalent angle nearest a signed joint interval."""
+    turns = (angle - 2 * math.pi, angle, angle + 2 * math.pi)
+    unwrapped = min(turns, key=lambda value: (
+        abs(value - max(minimum, min(maximum, value))),
+        abs(value - (minimum + maximum) / 2)))
+    return unwrapped, max(minimum, min(maximum, unwrapped))
+
+
+class JointAngleLimit:
+    def __init__(self, name, proximal, joint, distal, minimum, maximum):
+        self.name = name
+        self.proximal = proximal
+        self.joint = joint
+        self.distal = distal
+        self.minimum = math.radians(minimum)
+        self.maximum = math.radians(maximum)
+
+    def error(self):
+        upper = self.proximal.position - self.joint.position
+        lower = self.distal.position - self.joint.position
+        angle = math.atan2(upper.cross(lower), upper.dot(lower))
+        unwrapped, target = _bounded_angle(
+            angle, self.minimum, self.maximum)
+        return unwrapped - target
+
+    def solve(self):
+        upper = self.proximal.position - self.joint.position
+        lower = self.distal.position - self.joint.position
+        upper_sq = upper.length_squared()
+        lower_sq = lower.length_squared()
+        if upper_sq < 1 or lower_sq < 1:
+            return
+        error = self.error()
+        if abs(error) < 1e-6:
+            return
+        proximal_grad = pygame.Vector2(upper.y, -upper.x) / upper_sq
+        distal_grad = pygame.Vector2(-lower.y, lower.x) / lower_sq
+        joint_grad = -proximal_grad - distal_grad
+        denominator = (proximal_grad.length_squared()
+                       + joint_grad.length_squared()
+                       + distal_grad.length_squared())
+        step = max(-0.25, min(0.25, error)) / denominator
+        self.proximal.position -= proximal_grad * step
+        self.joint.position -= joint_grad * step
+        self.distal.position -= distal_grad * step
+
+
+def _closest_segment_points(first, second):
+    a, b = first.point_a.position, first.point_b.position
+    c, d = second.point_a.position, second.point_b.position
+    ab, cd = b - a, d - c
+    denominator = ab.cross(cd)
+    if abs(denominator) > 1e-9:
+        t = (c - a).cross(cd) / denominator
+        u = (c - a).cross(ab) / denominator
+        if 0 <= t <= 1 and 0 <= u <= 1:
+            return t, u, a + ab * t, c + cd * u
+    candidates = []
+    for t, point in ((0.0, a), (1.0, b)):
+        u = max(0.0, min(1.0, (point - c).dot(cd)
+                               / max(cd.length_squared(), 1e-9)))
+        other = c + cd * u
+        candidates.append((t, u, point, other))
+    for u, point in ((0.0, c), (1.0, d)):
+        t = max(0.0, min(1.0, (point - a).dot(ab)
+                               / max(ab.length_squared(), 1e-9)))
+        other = a + ab * t
+        candidates.append((t, u, other, point))
+    return min(candidates, key=lambda item:
+               item[2].distance_squared_to(item[3]))
+
+
+class BoneCollision:
+    def __init__(self, first, second):
+        self.first = first
+        self.second = second
+
+    def separation(self):
+        return _closest_segment_points(self.first, self.second)
+
+    def solve(self):
+        t, u, first_point, second_point = self.separation()
+        offset = second_point - first_point
+        distance = offset.length()
+        if distance >= BODY_COLLISION_GAP:
+            return
+        if distance > 1e-9:
+            normal = offset / distance
+        else:
+            line = (self.first.point_b.position
+                    - self.first.point_a.position)
+            normal = (pygame.Vector2(-line.y, line.x).normalize()
+                      if line.length_squared() > 1e-9
+                      else pygame.Vector2(1, 0))
+            midpoint = (self.second.point_a.position
+                        + self.second.point_b.position
+                        - self.first.point_a.position
+                        - self.first.point_b.position)
+            if midpoint.dot(normal) < 0:
+                normal = -normal
+        weights = (1 - t, t, 1 - u, u)
+        denominator = sum(weight * weight for weight in weights)
+        correction = normal * ((BODY_COLLISION_GAP - distance)
+                               / denominator)
+        self.first.point_a.position -= correction * weights[0]
+        self.first.point_b.position -= correction * weights[1]
+        self.second.point_a.position += correction * weights[2]
+        self.second.point_b.position += correction * weights[3]
+
+
+class AnatomyConstraints:
+    def __init__(self, points, bones):
+        by_name = {point.name: point for point in points}
+        self.joints = tuple(JointAngleLimit(
+            name, by_name[proximal], by_name[joint], by_name[distal],
+            minimum, maximum)
+            for name, proximal, joint, distal, minimum, maximum
+            in JOINT_ANGLE_LIMITS)
+        self.collisions = tuple(BoneCollision(first, second)
+            for index, first in enumerate(bones)
+            for second in bones[index + 1:]
+            if not ({first.point_a, first.point_b}
+                    & {second.point_a, second.point_b}))
+
+    def solve_joints(self):
+        for joint in self.joints:
+            joint.solve()
+
+    def solve_collisions(self):
+        for collision in self.collisions:
+            collision.solve()
+
+
+@dataclass(frozen=True)
+class ForceAction:
+    """Simultaneous forces: (point name, (horizontal, vertical)) pairs."""
+
+    forces: tuple[tuple[str, tuple[float, float]], ...]
+
+
+JOINT_ACTUATORS = (
+    # (name, proximal point, joint point, distal point, max torque)
+    ("neck", "Head", "Chest", "Pelvis", 25_000),
+    ("left_hip", "Chest", "Pelvis", "Left Knee", 60_000),
+    ("right_hip", "Chest", "Pelvis", "Right Knee", 60_000),
+    ("left_knee", "Pelvis", "Left Knee", "Left Foot", 60_000),
+    ("right_knee", "Pelvis", "Right Knee", "Right Foot", 60_000),
+)
+MAX_JOINT_FORCE = 1_500
+
+
+@dataclass(frozen=True)
+class JointTorqueAction:
+    """Normalized joint torques in JOINT_ACTUATORS order, each in [-1, 1]."""
+
+    values: tuple[float, ...]
+
+
+def resolve_joint_torque_action(points, action):
+    """Validate joint commands and bind them to this humanoid's points."""
+    if len(action.values) != len(JOINT_ACTUATORS):
+        raise ValueError("Joint action has the wrong number of torques")
+    by_name = {point.name: point for point in points}
+    resolved = []
+    for value, (name, proximal, joint, distal, limit) in zip(
+            action.values, JOINT_ACTUATORS):
+        try:
+            value = float(value)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError(f"Invalid torque for {name}") from error
+        if not math.isfinite(value) or not -1 <= value <= 1:
+            raise ValueError(f"Torque for {name} must be finite and in [-1, 1]")
+        resolved.append((by_name[proximal], by_name[joint],
+                         by_name[distal], value * limit))
+    return resolved
+
+
+def apply_resolved_joint_torques(resolved):
+    """Apply equal and opposite torques; total actuator force is zero."""
+    for proximal, joint, distal, torque in resolved:
+        upper = proximal.position - joint.position
+        lower = distal.position - joint.position
+        if upper.length_squared() < 1 or lower.length_squared() < 1:
+            continue
+        proximal_force = pygame.Vector2(-upper.y, upper.x) * (
+            torque / upper.length_squared())
+        distal_force = pygame.Vector2(-lower.y, lower.x) * (
+            -torque / lower.length_squared())
+        peak_force = max(proximal_force.length(), distal_force.length())
+        if peak_force > MAX_JOINT_FORCE:
+            scale = MAX_JOINT_FORCE / peak_force
+            proximal_force *= scale
+            distal_force *= scale
+        proximal.apply_force(proximal_force)
+        distal.apply_force(distal_force)
+        joint.apply_force(-proximal_force - distal_force)
+
+
+def resolve_force_action(points, action):
+    """Validate a force action before changing the physics state."""
+    by_name = {point.name: point for point in points}
+    resolved = []
+    for name, components in action.forces:
+        if name not in by_name:
+            raise ValueError(f"Unknown body point: {name}")
+        try:
+            x, y = components
+            force = pygame.Vector2(float(x), float(y))
+        except (TypeError, ValueError, OverflowError) as error:
+            raise ValueError(f"Invalid force for {name}") from error
+        if not math.isfinite(force.x) or not math.isfinite(force.y):
+            raise ValueError(f"Force for {name} must be finite")
+        resolved.append((by_name[name], force))
+    return resolved
 
 
 def create_humanoid():
@@ -304,6 +539,7 @@ def main():
     font = pygame.font.SysFont(None, 20)
     small_font = pygame.font.SysFont(None, 16)
     points, bones = create_humanoid()
+    anatomy = AnatomyConstraints(points, bones)
     selected = points[0]
     episode = EpisodeManager()
     show_labels = False
@@ -332,6 +568,7 @@ def main():
                     else:
                         episode.reset()
                     points, bones = create_humanoid()
+                    anatomy = AnatomyConstraints(points, bones)
                     selected = points[0]
                     dragging = False
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -355,9 +592,12 @@ def main():
             previous = [point.position.copy() for point in points]
             for point in points:
                 point.update(sub_dt)
-            for _ in range(CONSTRAINT_ITERATIONS):
+            for iteration in range(CONSTRAINT_ITERATIONS):
                 for bone in bones:
                     bone.solve()
+                anatomy.solve_joints()
+                if iteration >= CONSTRAINT_ITERATIONS - 2:
+                    anatomy.solve_collisions()
                 for point in points:
                     point.solve_world_collision()
             # Account for movement caused by the distance constraints.

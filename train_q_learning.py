@@ -158,6 +158,7 @@ class Arena:
 
     def reset(self, seed=None):
         self.points, self.bones = physics.create_humanoid()
+        self.anatomy = physics.AnatomyConstraints(self.points, self.bones)
         self.episode.reset()
         if seed is not None:
             rng = random.Random(seed)
@@ -174,6 +175,10 @@ class Arena:
     def step(self, action, selected=None, keys=None, mouse_position=None,
              controller=None):
         """Use the same substeps and collision order as the physics demo."""
+        forces = (physics.resolve_force_action(self.points, action)
+                  if isinstance(action, physics.ForceAction) else None)
+        torques = (physics.resolve_joint_torque_action(self.points, action)
+                   if isinstance(action, physics.JointTorqueAction) else None)
         sub_dt = FRAME_DT / physics.SUBSTEPS
         for _ in range(physics.SUBSTEPS):
             for point in self.points:
@@ -181,7 +186,12 @@ class Arena:
                 point.apply_force(pygame.Vector2(0, physics.GRAVITY_Y))
             if self.posture_assist:
                 physics.apply_posture_assist(self.points)
-            if isinstance(action, PoseAction):
+            if torques is not None:
+                physics.apply_resolved_joint_torques(torques)
+            elif forces is not None:
+                for point, force in forces:
+                    point.apply_force(force)
+            elif isinstance(action, PoseAction):
                 apply_pose_action(self.points, action.mask)
             elif isinstance(action, SpringAction):
                 apply_spring_action(self.points, action.mask)
@@ -200,9 +210,12 @@ class Arena:
             previous = [point.position.copy() for point in self.points]
             for point in self.points:
                 point.update(sub_dt)
-            for _ in range(physics.CONSTRAINT_ITERATIONS):
+            for iteration in range(physics.CONSTRAINT_ITERATIONS):
                 for bone in self.bones:
                     bone.solve()
+                self.anatomy.solve_joints()
+                if iteration >= physics.CONSTRAINT_ITERATIONS - 2:
+                    self.anatomy.solve_collisions()
                 for point in self.points:
                     point.solve_world_collision()
             for point, old_position in zip(self.points, previous):
