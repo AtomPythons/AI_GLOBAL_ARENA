@@ -1,3 +1,4 @@
 ppo_runs/
 __pycache__/
 *.pyc
+README_FOR_DEVELOPERS.md
