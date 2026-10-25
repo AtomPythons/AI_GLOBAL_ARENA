@@ -1,1 +1,3 @@
 ppo_runs/
+__pycache__/
+*.pyc
