@@ -16,7 +16,7 @@ python -m pip install -r requirements-ppo.txt
 `ppo_runs/seed_35_ГГГГММДД_ЧЧММСС`.
 
 ```bash
-python train_ppo_standing.py \
+python -m ppo_standing.train \
   --seed 35 --timesteps 204800 --num-envs 4 \
   --episode-seconds 10 --env-version 5 \
   --static-mu 0.2 --kinetic-mu 0.1 \
@@ -41,11 +41,11 @@ python train_ppo_standing.py \
 состояние на самом последнем шаге.
 
 ```bash
-python train_ppo_standing.py \
+python -m ppo_standing.train \
   --evaluate ppo_runs/seed_35_ГГГГММДД_ЧЧММСС/best.zip \
   --eval-episode-seconds 10 --eval-seed-start 100000 --eval-episodes 100
 
-python watch_ppo_model.py \
+python -m ppo_standing.watch \
   --model ppo_runs/seed_35_ГГГГММДД_ЧЧММСС/best.zip --seed 100000
 ```
 

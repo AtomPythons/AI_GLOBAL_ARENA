@@ -1,7 +1,7 @@
 """Compact-stance PPO task with finite foot-floor friction."""
 
-from finite_foot_friction import FiniteFrictionArena
-from ppo_standing_env_v4 import PPOCompactStanceEnv, REWARD_FIELDS_V4
+from .finite_friction import FiniteFrictionArena
+from .env_v4 import PPOCompactStanceEnv, REWARD_FIELDS_V4
 
 
 REWARD_FIELDS_V5 = REWARD_FIELDS_V4

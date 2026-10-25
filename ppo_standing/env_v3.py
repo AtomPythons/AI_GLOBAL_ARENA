@@ -1,7 +1,7 @@
 """Standing task with a stronger incentive to keep feet under the body."""
 
 import ai_arena_physics_base as physics
-from ppo_standing_env_v2 import PPOStableStanceEnv, REWARD_FIELDS_V2
+from .env_v2 import PPOStableStanceEnv, REWARD_FIELDS_V2
 
 
 REWARD_FIELDS_V3 = REWARD_FIELDS_V2 + ("stance_control",)

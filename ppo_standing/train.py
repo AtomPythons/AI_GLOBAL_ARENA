@@ -20,17 +20,21 @@ import stable_baselines3
 import torch
 
 import ai_arena_physics_base as physics
-from ppo_bounded_policy import BoundedMeanPolicy
-from ppo_standing_env import OBSERVATION_FIELDS, REWARD_FIELDS, PPOStandingEnv
-from ppo_standing_env_v2 import PPOStableStanceEnv, REWARD_FIELDS_V2
-from ppo_standing_env_v3 import PPOControlledStanceEnv, REWARD_FIELDS_V3
-from ppo_standing_env_v4 import PPOCompactStanceEnv, REWARD_FIELDS_V4
-from ppo_standing_env_v5 import PPOFiniteFrictionEnv, REWARD_FIELDS_V5
+from .policy import BoundedMeanPolicy
+from .env import OBSERVATION_FIELDS, REWARD_FIELDS, PPOStandingEnv
+from .env_v2 import PPOStableStanceEnv, REWARD_FIELDS_V2
+from .env_v3 import PPOControlledStanceEnv, REWARD_FIELDS_V3
+from .env_v4 import PPOCompactStanceEnv, REWARD_FIELDS_V4
+from .env_v5 import PPOFiniteFrictionEnv, REWARD_FIELDS_V5
 
 
+PACKAGE_SOURCE_FILES = frozenset((
+    "env.py", "env_v2.py", "env_v3.py", "env_v4.py", "env_v5.py",
+    "finite_friction.py", "policy.py", "train.py",
+))
 SOURCE_FILES = (
-    "ai_arena_physics_base.py", "train_q_learning.py",
-    "ppo_standing_env.py", "spring_control.py", "train_ppo_standing.py",
+    "ai_arena_physics_base.py", "train_q_learning.py", "spring_control.py",
+    "env.py", "train.py",
 )
 ENVIRONMENT_SOURCE_FILES = SOURCE_FILES[:-1]
 EPISODE_METRICS = (
@@ -40,19 +44,15 @@ EPISODE_METRICS = (
 
 
 def code_hashes():
-    root = Path(__file__).resolve().parent
-    hashes = {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+    package_root = Path(__file__).resolve().parent
+    project_root = package_root.parent
+    def source_path(name):
+        return package_root / name if name in PACKAGE_SOURCE_FILES else project_root / name
+    hashes = {name: hashlib.sha256(source_path(name).read_bytes()).hexdigest()
               for name in SOURCE_FILES}
-    hashes["ppo_standing_env_v2.py"] = hashlib.sha256(
-        (root / "ppo_standing_env_v2.py").read_bytes()).hexdigest()
-    hashes["ppo_bounded_policy.py"] = hashlib.sha256(
-        (root / "ppo_bounded_policy.py").read_bytes()).hexdigest()
-    hashes["ppo_standing_env_v3.py"] = hashlib.sha256(
-        (root / "ppo_standing_env_v3.py").read_bytes()).hexdigest()
-    hashes["ppo_standing_env_v4.py"] = hashlib.sha256(
-        (root / "ppo_standing_env_v4.py").read_bytes()).hexdigest()
-    for name in ("finite_foot_friction.py", "ppo_standing_env_v5.py"):
-        hashes[name] = hashlib.sha256((root / name).read_bytes()).hexdigest()
+    for name in ("env_v2.py", "policy.py", "env_v3.py", "env_v4.py",
+                 "finite_friction.py", "env_v5.py"):
+        hashes[name] = hashlib.sha256(source_path(name).read_bytes()).hexdigest()
     return hashes
 
 
@@ -89,15 +89,15 @@ def environment_options(config):
 def check_environment_hashes(manifest, current_hashes):
     required = list(ENVIRONMENT_SOURCE_FILES)
     if manifest["config"].get("env_version", 1) >= 2:
-        required.append("ppo_standing_env_v2.py")
+        required.append("env_v2.py")
     if manifest["config"].get("env_version", 1) >= 3:
-        required.append("ppo_standing_env_v3.py")
+        required.append("env_v3.py")
     if manifest["config"].get("env_version", 1) >= 4:
-        required.append("ppo_standing_env_v4.py")
+        required.append("env_v4.py")
     if manifest["config"].get("env_version", 1) == 5:
-        required.extend(("finite_foot_friction.py", "ppo_standing_env_v5.py"))
+        required.extend(("finite_friction.py", "env_v5.py"))
     if manifest["config"].get("policy", "standard") == "bounded":
-        required.append("ppo_bounded_policy.py")
+        required.append("policy.py")
     if any(manifest["code_sha256"].get(name) != current_hashes[name]
            for name in required):
         raise ValueError("Physics/environment code changed since this run")
@@ -463,11 +463,10 @@ def main():
             encoding="utf-8"))
         current_hashes = code_hashes()
         check_environment_hashes(manifest, current_hashes)
-        if manifest["code_sha256"]["train_ppo_standing.py"] != current_hashes[
-                "train_ppo_standing.py"]:
+        if manifest["code_sha256"]["train.py"] != current_hashes["train.py"]:
             manifest.setdefault("continuations", []).append({
                 "at_utc": datetime.now(timezone.utc).isoformat(),
-                "training_script_sha256": current_hashes["train_ppo_standing.py"],
+                "training_script_sha256": current_hashes["train.py"],
             })
         config = manifest["config"]
         checkpoint = run_dir / "last.zip"

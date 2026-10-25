@@ -10,11 +10,11 @@ import pygame
 from stable_baselines3 import PPO
 
 import ai_arena_physics_base as physics
-from ppo_standing_env import PPOStandingEnv
-from ppo_standing_env_v2 import PPOStableStanceEnv
-from ppo_standing_env_v3 import PPOControlledStanceEnv
-from ppo_standing_env_v4 import PPOCompactStanceEnv
-from ppo_standing_env_v5 import PPOFiniteFrictionEnv
+from .env import PPOStandingEnv
+from .env_v2 import PPOStableStanceEnv
+from .env_v3 import PPOControlledStanceEnv
+from .env_v4 import PPOCompactStanceEnv
+from .env_v5 import PPOFiniteFrictionEnv
 
 
 PANEL_WIDTH = 360
@@ -27,7 +27,7 @@ ACTION_NAMES = tuple(item[0] for item in physics.JOINT_ACTUATORS)
 
 
 def best_available_model():
-    model_dir = Path(__file__).resolve().parent / "ppo_runs"
+    model_dir = Path(__file__).resolve().parent.parent / "ppo_runs"
     models = list(model_dir.glob("*/best.zip"))
     if not models:
         raise FileNotFoundError(
@@ -67,21 +67,26 @@ def load_model_environment(path, episode_seconds=None):
     if manifest:
         source_hashes = manifest.get("code_sha256", {})
         required = ["ai_arena_physics_base.py", "train_q_learning.py",
-                    "ppo_standing_env.py", "spring_control.py"]
+                    "spring_control.py", "env.py"]
         if manifest["config"].get("env_version", 1) >= 2:
-            required.append("ppo_standing_env_v2.py")
+            required.append("env_v2.py")
         if manifest["config"].get("env_version", 1) >= 3:
-            required.append("ppo_standing_env_v3.py")
+            required.append("env_v3.py")
         if manifest["config"].get("env_version", 1) >= 4:
-            required.append("ppo_standing_env_v4.py")
+            required.append("env_v4.py")
         if manifest["config"].get("env_version", 1) == 5:
-            required.extend(("finite_foot_friction.py", "ppo_standing_env_v5.py"))
+            required.extend(("finite_friction.py", "env_v5.py"))
         if manifest["config"].get("policy", "standard") == "bounded":
-            required.append("ppo_bounded_policy.py")
+            required.append("policy.py")
         for name in required:
             expected = source_hashes.get(name)
+            package_root = Path(__file__).resolve().parent
+            project_root = package_root.parent
+            package_files = {"env.py", "env_v2.py", "env_v3.py", "env_v4.py",
+                             "env_v5.py", "finite_friction.py", "policy.py"}
             actual = hashlib.sha256(
-                (Path(__file__).resolve().parent / name).read_bytes()).hexdigest()
+                ((package_root if name in package_files else project_root) / name)
+                .read_bytes()).hexdigest()
             if expected is not None and actual != expected:
                 raise ValueError(f"Physics/environment code changed: {name}")
     duration = (episode_seconds if episode_seconds is not None else

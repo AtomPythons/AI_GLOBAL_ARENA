@@ -1,8 +1,8 @@
 """Standing task that accepts a compact, feet-together stance."""
 
 import ai_arena_physics_base as physics
-from ppo_standing_env import PPOStandingEnv
-from ppo_standing_env_v3 import PPOControlledStanceEnv, REWARD_FIELDS_V3
+from .env import PPOStandingEnv
+from .env_v3 import PPOControlledStanceEnv, REWARD_FIELDS_V3
 
 
 REWARD_FIELDS_V4 = REWARD_FIELDS_V3 + ("compact_stance",)

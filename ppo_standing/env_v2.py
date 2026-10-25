@@ -3,7 +3,7 @@
 import numpy as np
 
 import ai_arena_physics_base as physics
-from ppo_standing_env import PPOStandingEnv, REWARD_FIELDS
+from .env import PPOStandingEnv, REWARD_FIELDS
 
 
 STANCE_MIN = 35.0
