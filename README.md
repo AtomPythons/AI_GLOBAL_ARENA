@@ -32,6 +32,16 @@ The terminal prints the directory for the new run, for example
 model), `last.zip` (the final model), and a checkpoint after every evaluation
 in `checkpoints/`.
 
+## Continue a training run
+
+Use the run directory to continue from its latest `last.zip` checkpoint. The
+new steps, evaluations, and checkpoints are saved in the same directory:
+
+```bash
+python -m ppo_standing.train \
+  --resume ppo_runs/RUN_NAME --timesteps 102400
+```
+
 ## View a trained model
 
 Replace `RUN_NAME` with the directory printed during training:
